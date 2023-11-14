@@ -1,0 +1,1 @@
+having `bypass-filter` in `keys` list of `config.yml` will ignore all the list and simply just turn all the incoming request body to text

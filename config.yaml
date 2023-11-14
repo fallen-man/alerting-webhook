@@ -1,10 +1,5 @@
 keys:
- - BYPASS-FILTER
- - test
- - accounting
- - DevOps
- - Management
- - field19
+ - field8
  - field10
- - field4
- - field140
+options:
+ - bypass-filter

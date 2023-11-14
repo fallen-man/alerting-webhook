@@ -36,6 +36,12 @@ type ReportFilter struct {
 	Recipients            []string `json:"recipients"`
 }
 
+type Response struct {
+	Result    string `json:"result"`
+	Message   string `json:"message"`
+	ErrorFlag bool   `json:"errorFlag"`
+}
+
 func main() {
 	go getConfig()
 	requestHandle()
@@ -88,7 +94,10 @@ func customAppend(m map[string]interface{}) {
 		}
 	}
 	fmt.Println(strResult) // must replace with sendMessage() function
-	sendRequest(targetUrl, strResult)
+	err := sendRequest(targetUrl, strResult)
+	if err != nil {
+		log.Warn("error sending request: ", err)
+	}
 }
 
 // append all input json key:value and ignore configuration file
@@ -99,7 +108,10 @@ func appenAll(m map[string]interface{}) {
 		strResult = fmt.Sprintf("%v\n%v: %v", strResult, k, m[k])
 	}
 	fmt.Println(strResult) // must replace with sendMessage() function
-	sendRequest(targetUrl, strResult)
+	err := sendRequest(targetUrl, strResult)
+	if err != nil {
+		log.Warn("error sending request: ", err)
+	}
 }
 
 // create a slice from map and sort the content of the slice
@@ -135,6 +147,7 @@ func getConfig() {
 	}
 }
 
+// initialize payload structure and send the request to target webhook
 func sendRequest(url string, payloadData string) error {
 	payload := &Payload{
 		ReportFilter: ReportFilter{
@@ -161,9 +174,25 @@ func sendRequest(url string, payloadData string) error {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
+	} else {
+		checkResponse(resp)
 	}
 	defer resp.Body.Close()
 	return nil
+}
+
+func checkResponse(r *http.Response) {
+	respBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Warn(err)
+	}
+	var response Response
+	err = json.Unmarshal(respBody, &response)
+	if err != nil {
+		log.Warn(err)
+	}
+	resResult := fmt.Sprintf("result: %v\nmessage: %v\nerror flag: %v", response.Result, response.Message, response.ErrorFlag)
+	log.Info("Send Result:\n", resResult)
 }
 
 // implementing "in" function of python for finding values in a slice

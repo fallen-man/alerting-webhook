@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,8 +19,21 @@ import (
 var config Config
 var configBypass bool
 
+const targetUrl = "http://api.multimedia.mofid.dc/api/Sender/sendsms"
+
 type Config struct {
 	Keys []string `yaml:"keys"`
+}
+
+type Payload struct {
+	ReportFilter ReportFilter `json:"reportFilter"`
+}
+
+type ReportFilter struct {
+	SenderApplicationCode string   `json:"senderApplicationCode"`
+	MediaType             string   `json:"mediaType"`
+	Body                  string   `json:"body"`
+	Recipients            []string `json:"recipients"`
 }
 
 func main() {
@@ -31,7 +45,7 @@ func main() {
 func requestHandle() {
 	Router := mux.NewRouter().StrictSlash(true)
 	Router.HandleFunc("/getMessages", getMessages)
-	http.ListenAndServe("localhost:9090", Router)
+	http.ListenAndServe("localhost:7777", Router)
 }
 
 // handle every request that hit the /getMessages endpoint
@@ -74,6 +88,7 @@ func customAppend(m map[string]interface{}) {
 		}
 	}
 	fmt.Println(strResult) // must replace with sendMessage() function
+	sendRequest(targetUrl, strResult)
 }
 
 // append all input json key:value and ignore configuration file
@@ -84,6 +99,7 @@ func appenAll(m map[string]interface{}) {
 		strResult = fmt.Sprintf("%v\n%v: %v", strResult, k, m[k])
 	}
 	fmt.Println(strResult) // must replace with sendMessage() function
+	sendRequest(targetUrl, strResult)
 }
 
 // create a slice from map and sort the content of the slice
@@ -100,17 +116,54 @@ func sortKeys(m map[string]interface{}) []string {
 
 // parse YAML configuration file content and set the conditions of parsing json
 func getConfig() {
-	configData, err := os.ReadFile("config.yml")
-	if err != nil {
-		log.Fatal("error: ", err)
-	}
-	err = yaml.Unmarshal(configData, &config)
-	if err != nil {
-		log.Fatal("error: ", err)
-	}
-	if contains(config.Keys, "bypass-filter") {
+	if _, err := os.Stat("config.yml"); os.IsNotExist(err) {
 		configBypass = true
+		log.Warn("config.yml file not found, application will not filter any data!")
+	} else {
+		configData, err := os.ReadFile("config.yml")
+		if err != nil {
+			log.Fatal("error: ", err)
+		}
+		err = yaml.Unmarshal(configData, &config)
+		if err != nil {
+			log.Fatal("error: ", err)
+		}
+		if contains(config.Keys, "bypass-filter") {
+			configBypass = true
+			log.Info("bypass-filter key found, application will not filter any data!")
+		}
 	}
+}
+
+func sendRequest(url string, payloadData string) error {
+	payload := &Payload{
+		ReportFilter: ReportFilter{
+			SenderApplicationCode: "15",
+			MediaType:             "PublicSms",
+			Body:                  payloadData,
+			Recipients:            []string{"09392922123"},
+		},
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	body := bytes.NewReader(payloadBytes)
+
+	req, err := http.NewRequest("POST", url, body)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
 }
 
 // implementing "in" function of python for finding values in a slice

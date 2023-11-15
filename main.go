@@ -132,6 +132,7 @@ func getConfig() {
 		configBypass = true
 		log.Warn("config.yml file not found, application will not filter any data!")
 	} else {
+		log.Info("config.yml file found.")
 		configData, err := os.ReadFile("config.yml")
 		if err != nil {
 			log.Fatal("error: ", err)

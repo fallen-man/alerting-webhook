@@ -8,8 +8,9 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"time"
 
-	yaml "gopkg.in/yaml.v3"
+	"gopkg.in/yaml.v3"
 
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
@@ -19,7 +20,7 @@ import (
 var config Config
 var configBypass bool
 
-const targetUrl = "http://api.multimedia.mofid.dc/api/Sender/sendsms"
+const targetURL = "http://api.multimedia.mofid.dc/api/Sender/sendsms"
 
 type Config struct {
 	Keys []string `yaml:"keys"`
@@ -44,45 +45,53 @@ type Response struct {
 
 func main() {
 	go getConfig()
-	requestHandle()
+	startHTTPServer()
 }
 
-// start a mux router instance for handling incoming requests
-func requestHandle() {
-	Router := mux.NewRouter().StrictSlash(true)
-	Router.HandleFunc("/getMessages", getMessages)
-	http.ListenAndServe("0.0.0.0:7777", Router)
+// startHTTPServer initializes a mux router and starts an HTTP server
+func startHTTPServer() {
+	router := mux.NewRouter().StrictSlash(true)
+	router.HandleFunc("/getMessages", getMessages)
+	server := &http.Server{
+		Addr:         "localhost:7777",
+		Handler:      router,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+	log.Info("HTTP server listening on localhost:7777")
+	log.Fatal(server.ListenAndServe())
 }
 
-// handle every request that hit the /getMessages endpoint
+// getMessages handles requests to the /getMessages endpoint
 func getMessages(w http.ResponseWriter, r *http.Request) {
 	bodyData, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.Fatal("error reading body:", err)
+		log.Error("Error reading request body:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	defer r.Body.Close()
 	jsonParse(bodyData)
 }
 
-// parse the json body of incoming request
+// jsonParse parses the JSON body of an incoming request
 func jsonParse(b []byte) (map[string]interface{}, error) {
 	var result map[string]interface{}
 	err := json.Unmarshal(b, &result)
 	if err != nil {
-		log.Fatal("Error parsing Json:", err)
-		return make(map[string]interface{}, 0), err
+		log.Error("Error parsing JSON:", err)
+		return make(map[string]interface{}), err
 	}
-	if configBypass != true {
+	if !configBypass {
 		customAppend(result)
 	} else {
-		appenAll(result)
+		appendAll(result)
 	}
 
 	return result, nil
 }
 
-// append input json key:value based on configuration file
+// customAppend appends input JSON key:value pairs based on the configuration file
 func customAppend(m map[string]interface{}) {
 	keys := sortKeys(m)
 	var strResult string
@@ -93,28 +102,28 @@ func customAppend(m map[string]interface{}) {
 			}
 		}
 	}
-	fmt.Println(strResult) // must replace with sendMessage() function
-	err := sendRequest(targetUrl, strResult)
+	log.Println(strResult) // Replace with sendMessage() function
+	err := sendRequest(targetURL, strResult)
 	if err != nil {
-		log.Warn("error sending request: ", err)
+		log.Warn("Error sending request:", err)
 	}
 }
 
-// append all input json key:value and ignore configuration file
-func appenAll(m map[string]interface{}) {
+// appendAll appends all input JSON key:value pairs and ignores the configuration file
+func appendAll(m map[string]interface{}) {
 	keys := sortKeys(m)
 	var strResult string
 	for _, k := range keys {
 		strResult = fmt.Sprintf("%v\n%v: %v", strResult, k, m[k])
 	}
-	fmt.Println(strResult) // must replace with sendMessage() function
-	err := sendRequest(targetUrl, strResult)
+	log.Println(strResult) // Replace with sendMessage() function
+	err := sendRequest(targetURL, strResult)
 	if err != nil {
-		log.Warn("error sending request: ", err)
+		log.Warn("Error sending request:", err)
 	}
 }
 
-// create a slice from map and sort the content of the slice
+// sortKeys creates a slice from a map and sorts the content of the slice
 func sortKeys(m map[string]interface{}) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -126,77 +135,77 @@ func sortKeys(m map[string]interface{}) []string {
 	return keys
 }
 
-// parse YAML configuration file content and set the conditions of parsing json
+// getConfig parses YAML configuration file content and sets conditions for parsing JSON
 func getConfig() {
-	if _, err := os.Stat("config.yml"); os.IsNotExist(err) {
+	const configFileName = "config.yml"
+	if _, err := os.Stat(configFileName); os.IsNotExist(err) {
 		configBypass = true
-		log.Warn("config.yml file not found, application will not filter any data!")
+		log.Warnf("%s file not found, application will not filter any data!", configFileName)
 	} else {
-		log.Info("config.yml file found.")
-		configData, err := os.ReadFile("config.yml")
+		configData, err := os.ReadFile(configFileName)
 		if err != nil {
-			log.Fatal("error: ", err)
+			log.Fatal("Error reading config file:", err)
 		}
 		err = yaml.Unmarshal(configData, &config)
 		if err != nil {
-			log.Fatal("error: ", err)
+			log.Fatal("Error parsing config file:", err)
 		}
 		if contains(config.Keys, "bypass-filter") {
 			configBypass = true
-			log.Info("bypass-filter key found, application will not filter any data!")
+			log.Info("Bypass-filter key found, application will not filter any data!")
 		}
 	}
 }
 
-// initialize payload structure and send the request to target webhook
+// sendRequest initializes payload structure and sends the request to the target webhook
 func sendRequest(url string, payloadData string) error {
 	payload := &Payload{
 		ReportFilter: ReportFilter{
 			SenderApplicationCode: "15",
 			MediaType:             "PublicSms",
 			Body:                  payloadData,
-			Recipients:            []string{"09392922123"},
+			Recipients:            []string{"09128034338"},
 		},
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error marshaling payload: %v", err)
 	}
 
 	body := bytes.NewReader(payloadBytes)
 
 	req, err := http.NewRequest("POST", url, body)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error creating HTTP request: %v", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
-	} else {
-		checkResponse(resp)
+		return fmt.Errorf("Error sending HTTP request: %v", err)
 	}
 	defer resp.Body.Close()
+	checkResponse(resp)
 	return nil
 }
 
+// checkResponse reads and logs the response from the HTTP request
 func checkResponse(r *http.Response) {
 	respBody, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.Warn(err)
+		log.Warn("Error reading response body:", err)
 	}
 	var response Response
 	err = json.Unmarshal(respBody, &response)
 	if err != nil {
-		log.Warn(err)
+		log.Warn("Error parsing response JSON:", err)
 	}
-	resResult := fmt.Sprintf("result: %v\nmessage: %v\nerror flag: %v", response.Result, response.Message, response.ErrorFlag)
+	resResult := fmt.Sprintf("Result: %v\nMessage: %v\nError Flag: %v", response.Result, response.Message, response.ErrorFlag)
 	log.Info("Send Result:\n", resResult)
 }
 
-// implementing "in" function of python for finding values in a slice
+// contains checks if a string is present in a slice
 func contains(slice []string, item string) bool {
 	for _, value := range slice {
 		if value == item {

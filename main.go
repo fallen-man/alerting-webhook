@@ -51,7 +51,7 @@ func main() {
 func requestHandle() {
 	Router := mux.NewRouter().StrictSlash(true)
 	Router.HandleFunc("/getMessages", getMessages)
-	http.ListenAndServe("localhost:7777", Router)
+	http.ListenAndServe("0.0.0.0:7777", Router)
 }
 
 // handle every request that hit the /getMessages endpoint

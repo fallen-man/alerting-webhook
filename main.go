@@ -53,7 +53,7 @@ func startHTTPServer() {
 	router := mux.NewRouter().StrictSlash(true)
 	router.HandleFunc("/getMessages", getMessages)
 	server := &http.Server{
-		Addr:         "localhost:7777",
+		Addr:         "0.0.0.0:7777",
 		Handler:      router,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,

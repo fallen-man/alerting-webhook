@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 
 // Global Variables
 var config Config
-var configBypass bool
+var configBypass, aofBypass bool
 
 const targetURL = "http://api.multimedia.mofid.dc/api/Sender/sendsms"
 
@@ -72,6 +73,10 @@ func getMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 	jsonParse(bodyData)
+	if !aofBypass {
+		go saveRawData(bodyData)
+	}
+
 }
 
 // jsonParse parses the JSON body of an incoming request
@@ -154,6 +159,10 @@ func getConfig() {
 			configBypass = true
 			log.Info("Bypass-filter key found, application will not filter any data!")
 		}
+		if contains(config.Keys, "bypass-aof") {
+			aofBypass = true
+			log.Info("aof-bypass key found, application will not save raw alerts data in append-only file")
+		}
 	}
 }
 
@@ -164,7 +173,7 @@ func sendRequest(url string, payloadData string) error {
 			SenderApplicationCode: "15",
 			MediaType:             "PublicSms",
 			Body:                  payloadData,
-			Recipients:            []string{"09128034338"},
+			Recipients:            []string{"09392922123"},
 		},
 	}
 	payloadBytes, err := json.Marshal(payload)
@@ -203,6 +212,30 @@ func checkResponse(r *http.Response) {
 	}
 	resResult := fmt.Sprintf("Result: %v\nMessage: %v\nError Flag: %v", response.Result, response.Message, response.ErrorFlag)
 	log.Info("Send Result:\n", resResult)
+}
+
+// saveRawData will save raw json in file on localmachine
+func saveRawData(b []byte) {
+	dir := "/etc/alerting-webhook"
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		err = os.MkdirAll(dir, 0775)
+		if err != nil {
+			log.Errorf("Error creating data directory: %v", err)
+		}
+	}
+
+	time := time.Now()
+	fileName := filepath.Join(dir, "raw-alerts-"+time.Format("2023-01-02")+".json")
+
+	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Errorf("Error opening file: %v", err)
+	}
+	defer file.Close()
+
+	if _, err := file.Write(b); err != nil {
+		log.Errorf("Error writing to file: %v", err)
+	}
 }
 
 // contains checks if a string is present in a slice
